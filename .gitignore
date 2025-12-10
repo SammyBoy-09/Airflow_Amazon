@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Airflow
+logs/
+*.log
+airflow.db
+airflow-webserver.pid
+standalone_admin_password.txt
+
+# Data files (exclude large datasets)
+data/raw/*.csv
+data/raw/*.xlsx
+data/staging/*.csv
+data/staging/*.xlsx
+data/processed/*.csv
+data/processed/*.xlsx
+
+# Keep directory structure
+!data/raw/.gitkeep
+!data/staging/.gitkeep
+!data/processed/.gitkeep
+
+# Docker
+.env.local
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
