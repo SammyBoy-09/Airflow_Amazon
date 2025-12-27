@@ -21,6 +21,11 @@ This document collects concise code excerpts from the repository that implement 
 | Handling Constraint Violations | T0020 | scripts/Load.py |
 | Upsert Logic | T0021 | scripts/Load.py |
 | Error Table Creation (Rejects) | T0022 | scripts/Load.py |
+| Build Master DAG to Trigger All Pipelines | T0023 | dags/master_orchestrator_dag.py |
+| Event-Driven DAG Triggering | T0024 | dags/amazon_etl_dag.py |
+| Multi-DAG Dependency Management | T0025 | dags/amazon_reporting_dag.py |
+| Backfill & Catchup Features | T0026 | dags/amazon_etl_dag.py |
+| DAG Failure Handling Strategy | T0027 | dags/amazon_etl_dag.py |
 
 ---
 
@@ -515,16 +520,172 @@ _create_reject_table(engine)
 
 ---
 
+## T0023) Build Master DAG to Trigger All Pipelines
+
+```python
+# T0023: Master orchestrator DAG
+# File: dags/master_orchestrator_dag.py
+from airflow import DAG
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from datetime import datetime, timedelta
+
+with DAG(
+    dag_id="master_orchestrator",
+    start_date=datetime(2025, 12, 1),
+    schedule_interval="@daily",
+    catchup=False,
+    tags=['orchestration', 'master'],
+    description="T0023: Master DAG to trigger and coordinate all ETL pipelines"
+):
+    # Trigger child DAG with wait for completion
+    trigger_amazon_etl = TriggerDagRunOperator(
+        task_id="trigger_amazon_etl",
+        trigger_dag_id="amazon_etl",
+        wait_for_completion=True,
+        poke_interval=30,
+        reset_dag_run=True,
+        execution_date="{{ ds }}",
+        conf={"triggered_by": "master_orchestrator"}
+    )
+```
+
+## T0024) Event-Driven DAG Triggering
+
+```python
+# T0024: Event-driven triggering with FileSensor
+# File: dags/amazon_etl_dag.py
+from airflow.sensors.filesystem import FileSensor
+
+with DAG(
+    dag_id="amazon_etl",
+    # ... other config
+):
+    # Wait for file arrival before starting pipeline
+    wait_for_file = FileSensor(
+        task_id="wait_for_amazon_file",
+        filepath="/opt/airflow/data/raw/amazon.csv",
+        fs_conn_id="fs_default",
+        poke_interval=30,
+        timeout=600,
+        mode="poke",
+        soft_fail=False,
+    )
+
+    # Pipeline only starts after file is detected
+    wait_for_file >> extract_op >> transform_op >> load_op
+```
+
+## T0025) Multi-DAG Dependency Management
+
+```python
+# T0025: Cross-DAG dependency with ExternalTaskSensor
+# File: dags/amazon_reporting_dag.py
+from airflow.sensors.external_task import ExternalTaskSensor
+
+with DAG(
+    dag_id="amazon_reporting",
+    start_date=datetime(2025, 12, 1),
+    schedule_interval="@daily",
+    tags=['reporting', 'dependent'],
+):
+    # Wait for upstream DAG to complete
+    wait_for_amazon_etl = ExternalTaskSensor(
+        task_id="wait_for_amazon_etl_completion",
+        external_dag_id="amazon_etl",
+        external_task_id="load_amazon_data",
+        allowed_states=["success"],
+        failed_states=["failed", "skipped"],
+        mode="poke",
+        poke_interval=30,
+        timeout=3600,
+        execution_delta=timedelta(hours=0),
+    )
+
+    # Reporting only runs after amazon_etl succeeds
+    wait_for_amazon_etl >> generate_report_op >> notify_op
+```
+
+## T0026) Backfill & Catchup Features
+
+```python
+# T0026: Backfill and catchup configuration
+# File: dags/amazon_etl_dag.py
+with DAG(
+    dag_id="amazon_etl",
+    start_date=datetime(2025, 12, 1),  # Backfill start point
+    schedule_interval="@daily",
+    catchup=True,                      # Enable automatic backfill
+    max_active_runs=3,                 # Limit concurrent backfill runs
+    # ...
+):
+    # When DAG is enabled, Airflow automatically runs all missed intervals
+    # from start_date to present date
+    pass
+```
+
+**Manual backfill via CLI:**
+```bash
+# Backfill specific date range
+airflow dags backfill amazon_etl -s 2025-12-01 -e 2025-12-15
+
+# Backfill with concurrency limit
+airflow dags backfill amazon_etl -s 2025-12-01 -e 2025-12-15 --reset-dagruns
+```
+
+## T0027) DAG Failure Handling Strategy
+
+```python
+# T0027: Failure handling with retries and callbacks
+# File: dags/amazon_etl_dag.py
+import logging
+
+def on_failure_callback(context):
+    """Custom failure handler called after all retries exhausted"""
+    task_instance = context.get('task_instance')
+    dag_id = context.get('dag').dag_id
+    task_id = task_instance.task_id
+    execution_date = context.get('execution_date')
+    exception = context.get('exception')
+    
+    error_msg = f"""
+    ===== TASK FAILURE ALERT =====
+    DAG ID: {dag_id}
+    Task ID: {task_id}
+    Execution Date: {execution_date}
+    Exception: {exception}
+    Log URL: {task_instance.log_url}
+    ==============================
+    """
+    logging.error(error_msg)
+    # TODO: send_email() or send_slack_notification()
+
+default_args = {
+    "retries": 3,
+    "retry_delay": timedelta(minutes=5),
+    "retry_exponential_backoff": True,       # 5min, 10min, 20min
+    "max_retry_delay": timedelta(minutes=30),
+    "on_failure_callback": on_failure_callback,
+    "email_on_failure": False,
+    "depends_on_past": False,
+}
+```
+
+---
+
 ### Cross-References
 - Extract task: dags/amazon_etl_dag.py → extract_amazon_data
 - Transform task: dags/amazon_etl_dag.py → transform_amazon_data
 - Load task: dags/amazon_etl_dag.py → load_amazon_data
+- Master orchestrator: dags/master_orchestrator_dag.py
+- Reporting DAG: dags/amazon_reporting_dag.py
 
 ### Summary
-All 22 tasks (T0007–T0022) are fully implemented in the codebase with corresponding task numbers marking each implementation.
+All 27 tasks (T0007–T0027) are fully implemented in the codebase with corresponding task numbers marking each implementation.
 
 **Transform (T0008–T0017):** Data cleaning, type handling, deduplication, missing value strategies, feature engineering, normalization, aggregations, and date/time transformations.
 
 **Load (T0018–T0022):** Bulk operations with chunking, incremental vs. full load modes, constraint violation handling, upsert logic with primary key matching, and automated reject table creation.
+
+**Orchestration (T0023–T0027):** Master DAG coordination, event-driven triggering with file sensors, cross-DAG dependencies, backfill/catchup support, and comprehensive failure handling with retries and callbacks.
 
 Reusable utilities (`cleaning_utils.py`, `config_loader.py`) are available for future modularization.
