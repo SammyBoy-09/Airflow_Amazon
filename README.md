@@ -1,56 +1,79 @@
-# Customer ETL Pipeline with Apache Airflow
+# Amazon Order ETL Pipeline with Apache Airflow
 
-An automated ETL (Extract, Transform, Load) pipeline built with Apache Airflow for processing and cleaning customer data.
+An automated ETL (Extract, Transform, Load) pipeline built with Apache Airflow for processing Amazon order data with advanced data quality, transformation, and loading capabilities.
 
 ## Features
 
-### Data Processing
-- **Extract**: Reads customer data from Excel/CSV files
-- **Transform**: Comprehensive data cleaning and feature engineering
-- **Load**: Saves processed data to CSV, Excel, and PostgreSQL database
+### Core ETL Pipeline (T0007)
+- **Extract**: Reads Amazon order data from CSV/Excel files with automatic format detection
+- **Transform**: 10+ data cleaning and transformation operations with config-driven rules
+- **Load**: Multi-target output (CSV, Excel, PostgreSQL) with robust error handling
 
-### Advanced Capabilities
-- ✅ **Bulk Load Operations**: Configurable chunk size for efficient data loading (default: 1000 rows)
-- ✅ **Incremental vs Full Load**: Switch between full table replacement or appending new records
-- ✅ **Date Format Conversion**: Converts timestamps to human-readable YYYY-MM-DD format
-- ✅ **Data Quality Checks**: Email validation, duplicate removal, missing value handling
-- ✅ **Feature Engineering**: Customer segmentation, tenure calculation, spend normalization
+### Data Cleaning & Transformation (T0008-T0017)
+- ✅ **T0008**: Reusable cleaning utilities (trim, fillna, typecast)
+- ✅ **T0009**: Incorrect data type handling (phone standardization, numeric conversion)
+- ✅ **T0010**: Duplicate detection and removal by OrderID
+- ✅ **T0011**: Missing data strategies (mean/median fill, forward/backward fill, drop)
+- ✅ **T0012**: YAML-driven cleaning rules for flexible configuration
+- ✅ **T0013**: Aggregations (groupBy, sum, min, max) for order statistics
+- ✅ **T0014**: Normalization & scaling (min-max, standard)
+- ✅ **T0015**: Feature engineering (order categories, age groups)
+- ✅ **T0016**: Date/time transformations (year, month, day_of_week)
+- ✅ **T0017**: Config-based transformation rules via YAML
 
-## Data Transformations
+### Advanced Load Operations (T0018-T0022)
+- ✅ **T0018**: Bulk load operations with configurable chunk size (default: 1000 rows)
+- ✅ **T0019**: Incremental vs Full load modes
+- ✅ **T0020**: Constraint violation handling with row-level isolation
+- ✅ **T0021**: Upsert logic for insert-or-skip based on primary keys
+- ✅ **T0022**: Reject table for failed records with error context logging
 
-1. **Empty/Whitespace Handling**: Converts empty strings to NaN
-2. **Missing Data**: Fills missing names with "Unknown"
-3. **Duplicate Removal**: Removes duplicate customers by email
-4. **Email Validation**: Validates and filters invalid email formats
-5. **Text Normalization**: Converts names to uppercase, trims spaces
-6. **Date Processing**: Converts and sorts by last order date
-7. **Age Handling**: Converts to numeric, fills missing with mean
-8. **Order Aggregations**: Global and state-level order statistics
-9. **Customer Segmentation**: REGULAR vs LOYAL customer classification
-10. **Customer Tenure**: Calculates days since last order
-11. **Date Features**: Extracts year, month, day from order dates
-12. **Spend Normalization**: Min-max scaling for total_spend
+## Data Transformations (Amazon Orders)
+
+1. **Empty/Whitespace Handling**: Converts empty strings to NaN (T0008)
+2. **Text Trimming**: Strips leading/trailing whitespace from all string columns (T0008)
+3. **Missing Data**: Fills CustomerName with "Unknown", Age with mean (T0011)
+4. **Type Handling**: Converts Age to int, standardizes phone numbers (T0009)
+5. **Duplicate Removal**: Removes duplicate orders by OrderID (T0010)
+6. **Date Processing**: Parses OrderDate, sorts descending, extracts year/month/day (T0016)
+7. **Order Aggregations**: Global and state-level statistics (count, sum, min, max) (T0013)
+8. **Normalization**: Min-max scaling for TotalAmount (T0014)
+9. **Feature Engineering**: Order amount categories, customer age groups (T0015)
+10. **Config-Driven Rules**: YAML-based cleaning and transformation rules (T0012, T0017)
 
 ## Project Structure
 
 ```
-airflow-master/
+Airflow/
 ├── dags/
-│   ├── customer_etl_dag.py      # Main DAG definition
-│   └── example_bash_dag.py      # Example DAG
+│   └── amazon_etl_dag.py        # Main Amazon ETL DAG
 ├── scripts/
-│   ├── Extract.py               # Data extraction logic
-│   ├── Transform.py             # Data transformation logic
-│   └── Load.py                  # Data loading logic
+│   ├── Extract.py               # Data extraction (T0007)
+│   ├── TransformAmazon.py       # Amazon transformations (T0008-T0017)
+│   ├── Load.py                  # Multi-target loading (T0007, T0018-T0022)
+│   ├── cleaning_utils.py        # Reusable cleaning utilities (T0008, T0011)
+│   └── config_loader.py         # YAML/JSON config loader (T0012)
 ├── data/
-│   ├── raw/                     # Source data files
-│   ├── processed/               # Output files (CSV, Excel)
-│   └── staging/                 # Temporary processing files
+│   ├── raw/
+│   │   └── amazon.csv           # Source Amazon orders
+│   ├── processed/
+│   │   ├── amazon_cleaned_data.csv
+│   │   ├── orders_summary.csv
+│   │   └── rejected_records.csv # Failed records (T0022)
+│   └── staging/                 # Temporary files
 ├── config/
-│   └── etl.yaml                 # ETL configuration (optional)
+│   ├── amazon_cleaning_rules.yaml    # Cleaning config (T0012)
+│   └── amazon_etl_config.yaml        # Transform config (T0017)
+├── data_models/
+│   └── models.py                # Data model definitions
+├── docs/
+│   └── Implementation_Snippets.md    # Task documentation (T0007-T0022)
+├── tests/
+│   └── test_etl_pipeline.py     # Unit tests for utilities
 ├── Docker/
-│   ├── docker-compose.yaml      # Docker services configuration
-│   └── .env                     # Environment variables
+│   ├── docker-compose.yaml      # Airflow services
+│   ├── DOCKER_SETUP.md         # Docker setup guide
+│   └── start_airflow.ps1       # Windows startup script
 └── logs/                        # Airflow task logs
 ```
 
@@ -92,9 +115,9 @@ Default credentials (configure in `.env`):
 
 ### 4. Place Source Data
 
-Put your customer data file in:
+Put your Amazon order data file in:
 ```
-data/raw/customers_200.xlsx
+data/raw/amazon.csv
 ```
 
 ## Usage
@@ -103,48 +126,57 @@ data/raw/customers_200.xlsx
 
 #### Manual Trigger
 1. Go to http://localhost:8080
-2. Find the `customer_etl` DAG
+2. Find the `amazon_etl` DAG
 3. Click the play button to trigger manually
 
 #### CLI Trigger
 ```bash
-docker exec docker-webserver-1 airflow dags trigger customer_etl
+docker exec docker-webserver-1 airflow dags trigger amazon_etl
 ```
 
 #### Scheduled Runs
-The DAG runs automatically on a daily schedule at midnight.
+The DAG runs automatically on a daily schedule at midnight (configurable).
 
 ### Configuration Options
 
-#### Load Type (Full vs Incremental)
-In `dags/customer_etl_dag.py`, line 69:
+#### Load Type (T0019: Full vs Incremental)
+In `dags/amazon_etl_dag.py`, adjust the load mode:
 
 ```python
-load_type="full"        # Replaces entire table
+load_type="full"        # T0019: Replaces entire table
 # OR
-load_type="incremental" # Appends new records
+load_type="incremental" # T0019: Appends new records
 ```
 
-#### Bulk Load Chunk Size
-Adjust the batch size for loading:
+#### Bulk Load Chunk Size (T0018)
+Adjust the batch size for better performance:
 
 ```python
-bulk_chunk_size=1000  # Load 1000 rows at a time
-bulk_chunk_size=500   # Smaller batches
-bulk_chunk_size=5000  # Larger batches
+bulk_chunk_size=1000  # Default: 1000 rows per batch
+bulk_chunk_size=500   # Smaller batches for memory-constrained systems
+bulk_chunk_size=5000  # Larger batches for faster loading
+```
+
+#### Upsert Mode (T0021)
+Enable upsert logic to handle constraint violations:
+
+```python
+upsert_key="CustomerID"  # T0021: Enable upsert with primary key
+# OR
+upsert_key=None          # Disable upsert, use standard bulk load
 ```
 
 ### Checking Task Status
 
 ```bash
-docker exec docker-webserver-1 airflow tasks states-for-dag-run customer_etl <run_id>
+docker exec docker-webserver-1 airflow tasks states-for-dag-run amazon_etl <run_id>
 ```
 
 ### Viewing Logs
 
 Logs are stored in:
 ```
-logs/dag_id=customer_etl/
+logs/dag_id=amazon_etl/
 ```
 
 Or view in the Airflow UI under each task.
@@ -153,10 +185,12 @@ Or view in the Airflow UI under each task.
 
 After successful execution:
 
-- **CSV**: `data/processed/cleaned_data.csv`
-- **Excel**: `data/processed/cleaned_data.xlsx`
+- **CSV**: `data/processed/amazon_cleaned_data.csv`
+- **Excel**: `data/processed/amazon_cleaned_data.xlsx` (optional)
 - **PostgreSQL Table**: `customers_cleaned`
-- **Order Summary**: `data/processed/orders_summary.csv` & `.xlsx`
+- **Order Summary**: `data/processed/orders_summary.csv`
+- **Rejected Records**: `data/processed/rejected_records.csv` (T0022)
+- **Reject Table**: PostgreSQL `rejected_records` table with error context (T0022)
 
 ## Database Connection
 
@@ -180,7 +214,41 @@ Query the data:
 SELECT * FROM customers_cleaned LIMIT 10;
 ```
 
+## Implemented Tasks (T0007-T0022)
+
+### Extract & Load (T0007)
+- CSV/Excel file reading with format auto-detection
+- Multi-target output (CSV, Excel, PostgreSQL)
+
+### Transform Pipeline (T0008-T0017)
+- **T0008**: Reusable cleaning utilities (`cleaning_utils.py`)
+- **T0009**: Data type handling and phone standardization
+- **T0010**: Duplicate removal by OrderID
+- **T0011**: Missing data strategies (mean/median/drop)
+- **T0012**: YAML-driven cleaning rules
+- **T0013**: Aggregations (groupBy, sum, min, max)
+- **T0014**: Min-max normalization
+- **T0015**: Feature engineering (categories, age groups)
+- **T0016**: Date/time transformations
+- **T0017**: Config-based transformation rules
+
+### Load Pipeline (T0018-T0022)
+- **T0018**: Bulk load with configurable chunk size
+- **T0019**: Incremental vs full load modes
+- **T0020**: Constraint violation handling
+- **T0021**: Upsert logic with primary key matching
+- **T0022**: Reject table with error logging
+
+See [docs/Implementation_Snippets.md](docs/Implementation_Snippets.md) for detailed code examples.
+
 ## Future Enhancements
+
+### Orchestration (T0023-T0027) - Planned
+- Master DAG for multi-pipeline orchestration
+- Event-driven DAG triggering (file sensors)
+- Multi-DAG dependency management
+- Backfill & catchup features
+- Advanced failure handling strategies
 
 ### Smart Incremental Loading (Option 2)
 Currently documented in `scripts/Load.py` as TODO:
@@ -199,14 +267,15 @@ docker-compose up -d
 ```
 
 ### DAG Not Appearing
-- Check for syntax errors in `dags/customer_etl_dag.py`
+- Check for syntax errors in `dags/amazon_etl_dag.py`
 - Verify the DAG is in the `/opt/airflow/dags` folder
 - Wait 30 seconds for scheduler to parse DAGs
 
 ### Task Failures
 - Check logs in Airflow UI
-- Verify source data file exists: `data/raw/customers_200.xlsx`
+- Verify source data file exists: `data/raw/amazon.csv`
 - Check PostgreSQL connection
+- Review rejected records in `data/processed/rejected_records.csv` (T0022)
 
 ### Permission Issues
 ```bash

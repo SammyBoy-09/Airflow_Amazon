@@ -1,433 +1,262 @@
-"""
-Data Cleaning Utilities
-Reusable functions for data cleaning and transformation
-"""
+from __future__ import annotations
 
 import pandas as pd
 import numpy as np
-from typing import List, Union, Optional, Dict, Any
-import re
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LinearRegression
+from typing import Literal
 
 
 class DataCleaner:
-    """Comprehensive data cleaning utilities"""
-    
+    """Reusable data cleaning utilities for pandas DataFrames.
+
+    All methods are static and chainable, allowing flexible composition
+    of cleaning operations.
+    """
+
     @staticmethod
-    def trim_whitespace(df: pd.DataFrame, columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """
-        Trim leading and trailing whitespace from string columns
-        
+    def trim_whitespace(df: pd.DataFrame) -> pd.DataFrame:
+        """Trim leading/trailing whitespace from all string columns.
+
         Args:
             df: Input DataFrame
-            columns: Specific columns to trim (None = all string columns)
-            
+
         Returns:
-            DataFrame with trimmed strings
+            DataFrame with whitespace trimmed from string columns
         """
         df = df.copy()
-        
+        str_cols = df.select_dtypes(include="object").columns
+        for col in str_cols:
+            if df[col].dtype == "object":
+                df[col] = df[col].str.strip()
+        return df
+
+    @staticmethod
+    def fill_missing_mean(
+        df: pd.DataFrame, columns: list[str] | None = None
+    ) -> pd.DataFrame:
+        """Fill missing numeric values with column mean.
+
+        Args:
+            df: Input DataFrame
+            columns: List of columns to fill (if None, fills all numeric columns)
+
+        Returns:
+            DataFrame with missing values filled by mean
+        """
+        df = df.copy()
         if columns is None:
-            columns = df.select_dtypes(include=['object']).columns.tolist()
-        
-        for col in columns:
-            if col in df.columns and df[col].dtype == 'object':
-                df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
-        
-        return df
-    
-    @staticmethod
-    def fill_missing_mean(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-        """
-        Fill missing values with mean for numeric columns
-        
-        Args:
-            df: Input DataFrame
-            columns: Columns to fill
-            
-        Returns:
-            DataFrame with filled values
-        """
-        df = df.copy()
-        
-        for col in columns:
-            if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-                mean_value = df[col].mean()
-                df[col] = df[col].fillna(mean_value)
-        
-        return df
-    
-    @staticmethod
-    def fill_missing_median(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-        """
-        Fill missing values with median for numeric columns
-        
-        Args:
-            df: Input DataFrame
-            columns: Columns to fill
-            
-        Returns:
-            DataFrame with filled values
-        """
-        df = df.copy()
-        
-        for col in columns:
-            if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-                median_value = df[col].median()
-                df[col] = df[col].fillna(median_value)
-        
-        return df
-    
-    @staticmethod
-    def fill_missing_mode(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-        """
-        Fill missing values with mode (most frequent value)
-        
-        Args:
-            df: Input DataFrame
-            columns: Columns to fill
-            
-        Returns:
-            DataFrame with filled values
-        """
-        df = df.copy()
-        
+            columns = df.select_dtypes(include=[np.number]).columns.tolist()
         for col in columns:
             if col in df.columns:
-                mode_value = df[col].mode()
-                if len(mode_value) > 0:
-                    df[col] = df[col].fillna(mode_value[0])
-        
+                df[col] = df[col].fillna(df[col].mean())
         return df
-    
+
     @staticmethod
-    def fill_missing_forward(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-        """
-        Forward fill missing values (use previous value)
-        
+    def fill_missing_median(
+        df: pd.DataFrame, columns: list[str] | None = None
+    ) -> pd.DataFrame:
+        """Fill missing numeric values with column median.
+
         Args:
             df: Input DataFrame
-            columns: Columns to fill
-            
+            columns: List of columns to fill (if None, fills all numeric columns)
+
         Returns:
-            DataFrame with filled values
+            DataFrame with missing values filled by median
         """
         df = df.copy()
-        
+        if columns is None:
+            columns = df.select_dtypes(include=[np.number]).columns.tolist()
         for col in columns:
             if col in df.columns:
-                df[col] = df[col].ffill()
-        
+                df[col] = df[col].fillna(df[col].median())
         return df
-    
+
     @staticmethod
-    def fill_missing_backward(df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
-        """
-        Backward fill missing values (use next value)
-        
+    def remove_duplicates(
+        df: pd.DataFrame,
+        subset: list[str] | None = None,
+        keep: Literal["first", "last", False] = "first",
+    ) -> pd.DataFrame:
+        """Remove duplicate rows.
+
         Args:
             df: Input DataFrame
-            columns: Columns to fill
-            
+            subset: Column(s) to consider for identifying duplicates
+            keep: 'first', 'last', or False (remove all duplicates)
+
         Returns:
-            DataFrame with filled values
-        """
-        df = df.copy()
-        
-        for col in columns:
-            if col in df.columns:
-                df[col] = df[col].bfill()
-        
-        return df
-    
-    @staticmethod
-    def fill_missing_regression(df: pd.DataFrame, target_col: str, predictor_cols: List[str]) -> pd.DataFrame:
-        """
-        Fill missing values using linear regression
-        
-        Args:
-            df: Input DataFrame
-            target_col: Column with missing values to fill
-            predictor_cols: Columns to use as predictors
-            
-        Returns:
-            DataFrame with filled values
-        """
-        df = df.copy()
-        
-        # Separate rows with and without missing values in target
-        df_complete = df[df[target_col].notna()]
-        df_missing = df[df[target_col].isna()]
-        
-        if len(df_missing) == 0 or len(df_complete) == 0:
-            return df
-        
-        # Prepare training data
-        X_train = df_complete[predictor_cols].select_dtypes(include=[np.number])
-        y_train = df_complete[target_col]
-        X_predict = df_missing[predictor_cols].select_dtypes(include=[np.number])
-        
-        # Train model and predict
-        model = LinearRegression()
-        model.fit(X_train, y_train)
-        predictions = model.predict(X_predict)
-        
-        # Fill missing values
-        df.loc[df[target_col].isna(), target_col] = predictions
-        
-        return df
-    
-    @staticmethod
-    def remove_duplicates(df: pd.DataFrame, subset: Optional[List[str]] = None, 
-                         keep: str = 'first') -> pd.DataFrame:
-        """
-        Remove duplicate rows
-        
-        Args:
-            df: Input DataFrame
-            subset: Columns to consider for identifying duplicates
-            keep: Which duplicates to keep ('first', 'last', False)
-            
-        Returns:
-            DataFrame without duplicates
+            DataFrame with duplicates removed
         """
         return df.drop_duplicates(subset=subset, keep=keep)
-    
+
     @staticmethod
-    def typecast_column(df: pd.DataFrame, column: str, target_type: str) -> pd.DataFrame:
-        """
-        Convert column to specified data type
-        
+    def typecast_column(
+        df: pd.DataFrame, column: str, dtype: str
+    ) -> pd.DataFrame:
+        """Cast a column to a specified data type.
+
         Args:
             df: Input DataFrame
-            column: Column name
-            target_type: Target type ('int', 'float', 'str', 'datetime', 'bool')
-            
+            column: Column name to cast
+            dtype: Target data type (e.g., 'int', 'float', 'str', 'datetime')
+
         Returns:
-            DataFrame with converted column
+            DataFrame with column cast to new type
         """
         df = df.copy()
-        
+        if column in df.columns:
+            if dtype == "int":
+                df[column] = df[column].astype("Int64")  # Nullable int
+            elif dtype == "float":
+                df[column] = df[column].astype("Float64")  # Nullable float
+            elif dtype == "str":
+                df[column] = df[column].astype(str)
+            elif dtype == "datetime":
+                df[column] = pd.to_datetime(df[column], errors="coerce")
+            else:
+                df[column] = df[column].astype(dtype)
+        return df
+
+    @staticmethod
+    def validate_email(
+        df: pd.DataFrame,
+        column: str,
+        regex_pattern: str = r"^[\w\.-]+@[\w\.-]+\.\w+$",
+        drop_invalid: bool = False,
+    ) -> pd.DataFrame:
+        """Validate email format in a column.
+
+        Args:
+            df: Input DataFrame
+            column: Email column name
+            regex_pattern: Email regex pattern
+            drop_invalid: If True, drop rows with invalid emails; if False, set to NaN
+
+        Returns:
+            DataFrame with email validation applied
+        """
+        df = df.copy()
         if column not in df.columns:
             return df
-        
-        try:
-            if target_type == 'int':
-                df[column] = pd.to_numeric(df[column], errors='coerce').astype('Int64')
-            elif target_type == 'float':
-                df[column] = pd.to_numeric(df[column], errors='coerce')
-            elif target_type == 'str':
-                df[column] = df[column].astype(str)
-            elif target_type == 'datetime':
-                df[column] = pd.to_datetime(df[column], errors='coerce')
-            elif target_type == 'bool':
-                df[column] = df[column].astype(bool)
-            else:
-                print(f"Warning: Unknown type '{target_type}' for column '{column}'")
-        except Exception as e:
-            print(f"Error converting column '{column}' to {target_type}: {e}")
-        
-        return df
-    
-    @staticmethod
-    def handle_missing_data(df: pd.DataFrame, strategy: str = 'drop', 
-                           columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """
-        Handle missing data with specified strategy
-        
-        Args:
-            df: Input DataFrame
-            strategy: Strategy to use ('drop', 'mean', 'median', 'mode', 'ffill', 'bfill')
-            columns: Specific columns to apply strategy (None = all columns)
-            
-        Returns:
-            DataFrame with handled missing data
-        """
-        df = df.copy()
-        
-        if columns is None:
-            columns = df.columns.tolist()
-        
-        if strategy == 'drop':
-            df = df.dropna(subset=columns)
-        elif strategy == 'mean':
-            df = DataCleaner.fill_missing_mean(df, columns)
-        elif strategy == 'median':
-            df = DataCleaner.fill_missing_median(df, columns)
-        elif strategy == 'mode':
-            df = DataCleaner.fill_missing_mode(df, columns)
-        elif strategy == 'ffill':
-            df = DataCleaner.fill_missing_forward(df, columns)
-        elif strategy == 'bfill':
-            df = DataCleaner.fill_missing_backward(df, columns)
-        else:
-            print(f"Warning: Unknown strategy '{strategy}'")
-        
-        return df
-    
-    @staticmethod
-    def validate_email(df: pd.DataFrame, email_column: str, drop_invalid: bool = True) -> pd.DataFrame:
-        """
-        Validate email format
-        
-        Args:
-            df: Input DataFrame
-            email_column: Column containing emails
-            drop_invalid: Whether to drop invalid emails
-            
-        Returns:
-            DataFrame with validated emails
-        """
-        df = df.copy()
-        
-        if email_column not in df.columns:
-            return df
-        
-        email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
-        
+
+        valid_mask = (df[column].isna()) | (
+            df[column].str.contains(regex_pattern, regex=True, na=False)
+        )
+
         if drop_invalid:
-            df = df[df[email_column].str.contains(email_pattern, regex=True, na=False)]
+            df = df[valid_mask]
         else:
-            df['email_valid'] = df[email_column].str.contains(email_pattern, regex=True, na=False)
-        
+            df.loc[~valid_mask, column] = np.nan
+
         return df
-    
+
     @staticmethod
-    def remove_empty_strings(df: pd.DataFrame, columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """
-        Replace empty strings with NaN
-        
+    def remove_empty_strings(df: pd.DataFrame) -> pd.DataFrame:
+        """Convert empty strings and whitespace-only strings to NaN.
+
         Args:
             df: Input DataFrame
-            columns: Columns to process (None = all string columns)
-            
+
         Returns:
-            DataFrame with empty strings replaced
+            DataFrame with empty strings replaced by NaN
         """
         df = df.copy()
-        
-        if columns is None:
-            columns = df.select_dtypes(include=['object']).columns.tolist()
-        
-        for col in columns:
-            if col in df.columns:
-                df[col] = df[col].replace(r'^\s*$', np.nan, regex=True)
-        
+        str_cols = df.select_dtypes(include="object").columns
+        for col in str_cols:
+            df[col] = df[col].replace(r"^\s*$", np.nan, regex=True)
         return df
-    
+
     @staticmethod
-    def detect_outliers_iqr(df: pd.DataFrame, column: str, factor: float = 1.5) -> pd.Series:
-        """
-        Detect outliers using IQR method
-        
+    def detect_outliers_iqr(
+        df: pd.DataFrame, column: str, multiplier: float = 1.5
+    ) -> pd.Series:
+        """Detect outliers using Interquartile Range (IQR) method.
+
         Args:
             df: Input DataFrame
-            column: Column to check for outliers
-            factor: IQR multiplier (1.5 is standard)
-            
+            column: Column name to check for outliers
+            multiplier: IQR multiplier (default 1.5 for standard definition)
+
         Returns:
-            Boolean Series indicating outliers
+            Boolean Series where True indicates an outlier
         """
         Q1 = df[column].quantile(0.25)
         Q3 = df[column].quantile(0.75)
         IQR = Q3 - Q1
-        
-        lower_bound = Q1 - factor * IQR
-        upper_bound = Q3 + factor * IQR
-        
+        lower_bound = Q1 - multiplier * IQR
+        upper_bound = Q3 + multiplier * IQR
         return (df[column] < lower_bound) | (df[column] > upper_bound)
-    
+
     @staticmethod
-    def remove_outliers_iqr(df: pd.DataFrame, columns: List[str], factor: float = 1.5) -> pd.DataFrame:
-        """
-        Remove outliers using IQR method
-        
+    def remove_outliers_iqr(
+        df: pd.DataFrame, columns: list[str] | None = None, multiplier: float = 1.5
+    ) -> pd.DataFrame:
+        """Remove rows containing outliers (via IQR method).
+
         Args:
             df: Input DataFrame
-            columns: Columns to check for outliers
-            factor: IQR multiplier
-            
+            columns: Columns to check for outliers (if None, checks all numeric)
+            multiplier: IQR multiplier (default 1.5)
+
         Returns:
-            DataFrame without outliers
+            DataFrame with outlier rows removed
         """
         df = df.copy()
-        
+        if columns is None:
+            columns = df.select_dtypes(include=[np.number]).columns.tolist()
+
         for col in columns:
-            if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-                outlier_mask = DataCleaner.detect_outliers_iqr(df, col, factor)
+            if col in df.columns:
+                outlier_mask = DataCleaner.detect_outliers_iqr(df, col, multiplier)
                 df = df[~outlier_mask]
-        
+
         return df
-    
+
     @staticmethod
-    def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Standardize column names (lowercase, underscores)
-        
+    def handle_missing_data(
+        df: pd.DataFrame,
+        strategy: Literal["drop", "mean", "median", "forward_fill", "backward_fill"]
+        = "drop",
+        columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """Handle missing data with various strategies.
+
         Args:
             df: Input DataFrame
-            
+            strategy: 'drop', 'mean', 'median', 'forward_fill', 'backward_fill'
+            columns: Columns to apply strategy (if None, applies to all)
+
         Returns:
-            DataFrame with standardized column names
+            DataFrame with missing data handled
         """
         df = df.copy()
-        df.columns = [col.lower().strip().replace(' ', '_') for col in df.columns]
+
+        if columns is None:
+            columns = df.columns.tolist()
+
+        if strategy == "drop":
+            df = df.dropna(subset=columns)
+        elif strategy == "mean":
+            for col in columns:
+                if col in df.columns and df[col].dtype in [
+                    np.float64,
+                    np.int64,
+                    "float64",
+                    "int64",
+                ]:
+                    df[col] = df[col].fillna(df[col].mean())
+        elif strategy == "median":
+            for col in columns:
+                if col in df.columns and df[col].dtype in [
+                    np.float64,
+                    np.int64,
+                    "float64",
+                    "int64",
+                ]:
+                    df[col] = df[col].fillna(df[col].median())
+        elif strategy == "forward_fill":
+            df = df.fillna(method="ffill")  # type: ignore
+        elif strategy == "backward_fill":
+            df = df.fillna(method="bfill")  # type: ignore
+
         return df
-
-
-# Convenience functions
-def trim(df: pd.DataFrame, columns: Optional[List[str]] = None) -> pd.DataFrame:
-    """Trim whitespace - convenience function"""
-    return DataCleaner.trim_whitespace(df, columns)
-
-
-def fillna(df: pd.DataFrame, strategy: str = 'mean', columns: Optional[List[str]] = None) -> pd.DataFrame:
-    """Fill missing values - convenience function"""
-    return DataCleaner.handle_missing_data(df, strategy, columns)
-
-
-def typecast(df: pd.DataFrame, column: str, target_type: str) -> pd.DataFrame:
-    """Type cast column - convenience function"""
-    return DataCleaner.typecast_column(df, column, target_type)
-
-
-# Example usage
-if __name__ == "__main__":
-    # Create sample data
-    data = {
-        'name': ['  John  ', 'Jane', '  Bob  ', 'Alice', 'John'],
-        'age': [25, np.nan, 35, 28, 25],
-        'email': ['john@example.com', 'invalid-email', 'bob@test.com', 'alice@test.com', 'john@example.com'],
-        'salary': [50000, 60000, 200000, 55000, 50000]  # 200000 is outlier
-    }
-    df = pd.DataFrame(data)
-    
-    print("Original Data:")
-    print(df)
-    print("\n" + "="*50 + "\n")
-    
-    # Apply cleaning utilities
-    df = DataCleaner.trim_whitespace(df)
-    print("After trimming whitespace:")
-    print(df)
-    print("\n" + "="*50 + "\n")
-    
-    df = DataCleaner.fill_missing_mean(df, ['age'])
-    print("After filling missing age with mean:")
-    print(df)
-    print("\n" + "="*50 + "\n")
-    
-    df = DataCleaner.remove_duplicates(df, subset=['name', 'email'])
-    print("After removing duplicates:")
-    print(df)
-    print("\n" + "="*50 + "\n")
-    
-    df = DataCleaner.validate_email(df, 'email', drop_invalid=True)
-    print("After validating emails:")
-    print(df)
-    print("\n" + "="*50 + "\n")
-    
-    df = DataCleaner.remove_outliers_iqr(df, ['salary'])
-    print("After removing outliers:")
-    print(df)

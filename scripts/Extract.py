@@ -1,5 +1,6 @@
 import pandas as pd
 
+# T0007: Implement demo script to read/write CSVs
 def extract(input_path: str):
     """
     Extracts data from CSV or Excel and returns a DataFrame.
