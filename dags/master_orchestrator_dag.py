@@ -62,14 +62,6 @@ with DAG(
         conf={"triggered_by": "master_orchestrator"}
     )
 
-    # --------- PLACEHOLDER: TRIGGER FUTURE PIPELINES ---------
-    # Example: Add more pipelines here as they are created
-    # trigger_customer_etl = TriggerDagRunOperator(
-    #     task_id="trigger_customer_etl",
-    #     trigger_dag_id="customer_etl",
-    #     wait_for_completion=True,
-    # )
-
     def completion_summary(ti):
         """Log completion summary of all pipelines"""
         logging.info("=" * 60)

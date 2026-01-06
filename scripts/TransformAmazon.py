@@ -62,6 +62,12 @@ def transform_amazon(df: pd.DataFrame):
     print(f"Invalid emails found: {len(invalid_emails)} - {list(invalid_emails)[:5]}")
     df = df[valid_email_mask]
     print(f"After email validation: {len(df)} rows")
+    
+    
+    
+    #################   Create new tables for Rejected summary statistics   #################
+    
+    
 
     # ========================================
     # T0011: Missing data handling strategies

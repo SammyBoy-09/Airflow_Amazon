@@ -72,7 +72,7 @@ with DAG(
     dag_id="amazon_etl",
     default_args=default_args,
     start_date=datetime(2025, 12, 1),    # T0026: Start date for backfill/catchup
-    schedule_interval=None,              # Triggered only by master_orchestrator (no auto-schedule)
+    schedule_interval="@daily",          # Runs daily at midnight
     catchup=True,                        # T0026: Enable backfill for historical runs
     max_active_runs=3,                   # T0026: Limit concurrent backfill runs
     tags=['etl', 'amazon', 'production'], # Tags for filtering in UI
