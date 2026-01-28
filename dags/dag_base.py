@@ -31,8 +31,8 @@ import shutil
 # DAG DEFAULT ARGUMENTS
 # ========================================
 
-# Email for notifications (set SMTP_USER in .env file)
-ALERT_EMAIL = os.environ.get('SMTP_USER', 'airflow@example.com')
+# Email for notifications - MUST be configured in Docker/.env file (ALERT_EMAIL_TO)
+ALERT_EMAIL = os.environ.get('ALERT_EMAIL_TO', 'EXAMPLE@example.com')
 
 # ========================================
 # Team 1 - T0032: Error Recovery Workflow

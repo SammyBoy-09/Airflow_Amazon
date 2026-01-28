@@ -345,14 +345,16 @@ Open http://localhost:5000 in your browser.
 
 By default, email notifications are disabled. To enable them for DAG failure/success alerts:
 
-**Step 8.1**: Edit `Docker/.env` file and add your SMTP settings:
+**Step 8.1**: Edit `Docker/.env` file and configure your email settings:
 
 ```bash
-# Email Configuration (Optional - for DAG failure/success notifications)
-SMTP_USER=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
+# Email Configuration (Required for notifications)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
+SMTP_USER=your-email@gmail.com              # Your Gmail address
+SMTP_PASSWORD=your-app-password             # Gmail app password (see below)
+SMTP_MAIL_FROM=your-email@gmail.com         # Same as SMTP_USER
+ALERT_EMAIL_TO=your-email@gmail.com         # Where to receive alerts
 ```
 
 **Step 8.2**: For Gmail users, create an App Password:
@@ -366,7 +368,80 @@ cd Docker
 docker-compose restart webserver scheduler
 ```
 
-**Note**: If you skip this step, the default email `airflow@example.com` will be used (notifications won't actually be sent, but DAGs will still run normally).
+**Note**: If you skip this step, notifications won't be sent, but DAGs will still run normally. **You must set `ALERT_EMAIL_TO` in `Docker/.env`** - this variable is used by all DAGs for sending failure/success alerts.
+
+---
+
+### ⚠️ IMPORTANT: Troubleshooting Email Notifications
+
+**If you're not receiving email notifications even after configuring SMTP settings, follow these steps:**
+
+**1. Verify `.env` Configuration**
+
+Open `Docker/.env` and ensure ALL email fields are filled:
+
+```bash
+SMTP_HOST=smtp.gmail.com                    # ✓ Must be set
+SMTP_PORT=587                               # ✓ Must be set
+SMTP_USER=your-email@gmail.com              # ✓ MUST match your Gmail
+SMTP_PASSWORD=your-app-password             # ✓ MUST be App Password (not regular password)
+SMTP_MAIL_FROM=your-email@gmail.com         # ✓ MUST match SMTP_USER
+ALERT_EMAIL_TO=your-email@gmail.com         # ✓ THIS IS CRITICAL - where alerts go
+```
+
+**2. Verify `dag_base.py` Configuration**
+
+Check `dags/dag_base.py` line 35:
+
+```python
+# Email for notifications - MUST be configured in Docker/.env file (ALERT_EMAIL_TO)
+ALERT_EMAIL = os.environ.get('ALERT_EMAIL_TO', '')
+```
+
+- ✓ Should read from `ALERT_EMAIL_TO` environment variable
+- ✓ Default should be empty string `''` (no hardcoded email)
+- ❌ If you see any hardcoded email address here, **remove it** and use `ALERT_EMAIL_TO` instead
+
+**3. Enable Email Notifications in DAGs**
+
+By default, email notifications are disabled. To enable them, edit `dags/dag_base.py`:
+
+```python
+# Change these from False to True:
+'email_on_failure': True,   # Enable failure notifications
+'email_on_retry': False,    # Optional: enable retry notifications
+```
+
+**4. Test Email Configuration**
+
+After making changes:
+```powershell
+# 1. Restart services
+cd Docker
+docker-compose restart webserver scheduler
+
+# 2. Trigger a test DAG to verify emails are sent
+# 3. Check Airflow UI → Admin → Configurations → Search "smtp" to verify settings loaded
+```
+
+**5. Common Issues**
+
+| Issue | Solution |
+|-------|----------|
+| "Authentication failed" | Use Gmail App Password, not regular password |
+| "No emails received" | Check `ALERT_EMAIL_TO` is set in `.env` |
+| "SMTP connection refused" | Verify `SMTP_HOST` and `SMTP_PORT` are correct |
+| "Emails go to wrong address" | Update `ALERT_EMAIL_TO` in `.env` and restart |
+
+**6. Quick Verification Checklist**
+
+- [ ] `Docker/.env` has `ALERT_EMAIL_TO=your-email@gmail.com`
+- [ ] `Docker/.env` has valid Gmail App Password in `SMTP_PASSWORD`
+- [ ] `dags/dag_base.py` uses `os.environ.get('ALERT_EMAIL_TO', '')`
+- [ ] Email notifications enabled: `email_on_failure: True` in dag_base.py
+- [ ] Services restarted after changes: `docker-compose restart webserver scheduler`
+
+---
 
 ### 9. Verify System Health
 
