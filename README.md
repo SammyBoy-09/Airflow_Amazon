@@ -100,6 +100,11 @@ data/raw/dataset/
 └── Exchange_Rates.csv
 ```
 
+**First-Time Users**: If you don't have data files, the project includes sample data. Verify the files exist:
+```powershell
+ls data\raw\dataset
+```
+
 ### 3. Start All Services
 
 ```powershell
@@ -108,62 +113,428 @@ docker-compose up -d
 ```
 
 This single command will:
-- Pull required Docker images (first time only)
-- Create a PostgreSQL database
-- Initialize Airflow metadata
-- Start 6 services (Postgres, Redis, Airflow Webserver, Airflow Scheduler, REST API, pgAdmin)
-- Set up networking and volumes
+- Pull required Docker images (first time: ~5-10 minutes, downloads ~2GB)
+- Create a PostgreSQL database with Airflow metadata schema
+- Initialize Airflow database tables
+- Start 15 services (Postgres, Redis, Airflow Webserver, Scheduler, REST API, pgAdmin, Grafana, Prometheus, Loki, etc.)
+- Set up internal Docker networking
+- Create persistent volumes for data storage
+
+**What to Expect on First Run**:
+```
+[+] Running 16/16
+ ✔ Network docker_etl-network         Created
+ ✔ Container docker-postgres-1        Healthy
+ ✔ Container docker-redis-1           Healthy
+ ✔ Container docker-loki-1            Healthy
+ ✔ Container docker-airflow-init-1    Exited (0)
+ ✔ Container docker-webserver-1       Healthy
+ ✔ Container docker-scheduler-1       Healthy
+ ✔ Container docker-api-1             Healthy
+ ✔ Container docker-grafana-1         Started
+ ✔ Container docker-prometheus-1      Started
+ ...
+```
 
 ### 4. Wait for Initialization
 
-Services take ~2-3 minutes to fully initialize. Check status:
+**IMPORTANT**: First-time setup requires ~3-5 minutes for complete initialization:
+- **Minute 1-2**: PostgreSQL database creation and Airflow schema setup
+- **Minute 2-3**: Airflow webserver starting and DAG parsing
+- **Minute 3-4**: All services becoming healthy
+- **Minute 4-5**: DAGs appearing in Airflow UI
 
+Check service status:
 ```powershell
 docker-compose ps
 ```
 
-All services should show as "healthy" or "running".
+All services should show `Up` with status `(healthy)`:
+```
+NAME                    STATUS
+docker-webserver-1      Up (healthy)
+docker-scheduler-1      Up
+docker-postgres-1       Up (healthy)
+docker-redis-1          Up (healthy)
+...
+```
 
-### 5. Access the UI
+If services show as `starting` or `unhealthy`, wait an additional 1-2 minutes.
+
+### 5. Access the Airflow UI
 
 Open your browser and navigate to:
 - **Airflow UI**: http://localhost:8080
   - Username: `airflow`
   - Password: `airflow`
 
-### 6. Start the Web Dashboard (Optional but Recommended)
+**First Login**: The Airflow UI will show a list of DAGs. Initially, all DAGs will be paused (gray toggle). This is normal!
 
-The web dashboard provides a user-friendly interface for monitoring DAGs. Open a new terminal:
+**Expected DAGs**:
+- `etl_master_orchestrator` - Master pipeline coordinator
+- `etl_customers` - Customer data pipeline
+- `etl_products` - Product data pipeline
+- `etl_stores` - Store data pipeline
+- `etl_exchange_rates` - Exchange rate pipeline
+- `etl_sales` - Sales transaction pipeline
+- `etl_reports` - Report generation pipeline
+- `etl_data_quality` - Data quality checks
+
+### 6. Set Up PostgreSQL Admin Access (pgAdmin)
+
+pgAdmin provides a graphical interface to view and query the PostgreSQL database.
+
+**Step 6.1**: Open pgAdmin at http://localhost:5050
+
+**Step 6.2**: Login with default credentials:
+- **Email**: `admin@admin.com`
+- **Password**: `admin`
+
+**Step 6.3**: Register the PostgreSQL Server
+
+1. In pgAdmin, right-click **"Servers"** in left sidebar
+2. Select **"Register" → "Server..."**
+3. Fill in the **General Tab**:
+   - **Name**: `Airflow ETL Database` (or any name you prefer)
+
+4. Fill in the **Connection Tab**:
+   - **Host name/address**: `postgres` (this is the Docker service name)
+   - **Port**: `5432` (internal Docker port, NOT 5434)
+   - **Maintenance database**: `airflow`
+   - **Username**: `airflow`
+   - **Password**: `airflow`
+
+5. Click **"Save"**
+
+**Step 6.4**: Verify Connection
+
+After saving, you should see:
+```
+Servers
+└── Airflow ETL Database
+    └── Databases (2)
+        ├── airflow (Airflow metadata)
+        └── postgres (system database)
+```
+
+**Step 6.5**: View ETL Data
+
+1. Expand: **Servers → Airflow ETL Database → Databases → airflow → Schemas**
+2. You'll see two schemas:
+   - **public**: Airflow system tables (dag_run, task_instance, etc.)
+   - **etl_output**: Your ETL data tables (customers, products, sales, etc.)
+
+3. To view data:
+   - Right-click on `etl_output.customers` → **View/Edit Data → First 100 Rows**
+   - Or use the Query Tool: **Tools → Query Tool**, then run:
+     ```sql
+     SELECT * FROM etl_output.customers LIMIT 100;
+     ```
+
+**Troubleshooting pgAdmin Connection**:
+- **Error "Unable to connect to server"**: 
+  - Make sure PostgreSQL container is healthy: `docker-compose ps postgres`
+  - Use `postgres` as hostname (NOT `localhost`)
+  - Use port `5432` (NOT 5434)
+- **Access Denied**: Verify username/password are both `airflow`
+
+### 7. Set Up Python Environment for Web Dashboard (Optional but Recommended)
+
+The web dashboard provides a modern, user-friendly interface for monitoring all DAGs, viewing execution logs, and downloading processed data.
+
+**Step 7.1**: Create Python Environment
 
 ```powershell
-# Activate Python environment
+# If using Conda
+conda create -n airflow_env python=3.11
+conda activate airflow_env
 
+# If using venv
+python -m venv airflow_env
+.\airflow_env\Scripts\Activate.ps1
+```
+
+**Step 7.2**: Install Dependencies
+
+```powershell
 # Navigate to project root
-cd \Airflow
+cd D:\sam\Projects\Infosys\Airflow
 
-# Start the Flask web dashboard
+# Install requirements
+pip install -r requirements.txt
+```
+
+This will install:
+- Flask 3.1.0 (web framework)
+- pandas 2.2.3 (data processing)
+- requests 2.32.3 (API calls)
+- python-dotenv 1.0.1 (config management)
+
+**Step 7.3**: Start the Web Dashboard
+
+```powershell
+# Ensure you're in project root
+cd D:\sam\Projects\Infosys\Airflow
+
+# Start Flask dashboard
 python scripts/api/web_dashboard.py
 ```
 
-The dashboard will start on **http://localhost:5000** with output:
+**Expected Output**:
 ```
+ * Serving Flask app 'web_dashboard'
+ * Debug mode: off
 🚀 Airflow API Web Dashboard
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 API Endpoint: http://localhost:8000
 Dashboard URL: http://localhost:5000
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Dashboard Features:
+  • DAG Overview & Status Monitoring
+  • Real-time Task Execution Tracking
+  • Interactive Log Viewer
+  • Data Downloads (Bronze/Silver/Gold Layers)
+  • Performance Metrics & Charts
+
+Press Ctrl+C to stop the server
 ```
 
-**Note**: Keep this terminal running to use the dashboard. The REST API (port 8000) must be running in Docker for the dashboard to work.
+**Step 7.4**: Access the Web Dashboard
 
-### 7. Trigger the Master DAG
+Open http://localhost:5000 in your browser.
 
-In the Airflow UI (http://localhost:8080):
-1. Find `etl_master_orchestrator` in the DAG list
-2. Toggle the DAG to "On" (unpause)
-3. Click the "Play" button → "Trigger DAG"
+**Dashboard Features**:
+- **Overview Tab**: Summary of all DAGs with status
+- **DAG Details**: Execution history and task breakdown
+- **Logs Tab**: Real-time log streaming
+- **Downloads Tab**: Download processed datasets and reports
+- **Metrics Tab**: Performance analytics
 
-This will automatically run all 5 source pipelines and generate reports!
+**Keep Terminal Running**: The web dashboard requires the terminal to stay open. The REST API at http://localhost:8000 must also be running (it's part of the Docker stack).
 
-**Alternative**: Use the Web Dashboard at http://localhost:5000 for an easier monitoring experience!
+### 8. Verify System Health
+
+Before running pipelines, verify all components are working:
+
+**Check 1**: Docker Services
+```powershell
+docker-compose ps
+```
+All services should be `Up` and `healthy`.
+
+**Check 2**: Airflow UI
+- Open http://localhost:8080
+- Login successful
+- DAGs visible in list
+
+**Check 3**: REST API
+```powershell
+# Test API health
+Invoke-RestMethod -Uri "http://localhost:8000/health"
+```
+Should return: `{"status":"healthy","timestamp":"..."}`
+
+**Check 4**: Database Connection
+```powershell
+# Test database from container
+docker exec -it docker-postgres-1 psql -U airflow -d airflow -c "\dt etl_output.*"
+```
+Should show: "Did not find any relations" (tables will appear after first DAG run)
+
+**Check 5**: Web Dashboard (if running)
+- Open http://localhost:5000
+- Should show empty state (no runs yet)
+
+**All Checks Passed?** You're ready to trigger your first DAG! 🎉
+
+### 9. Create Additional Airflow Users (Optional)
+
+By default, the admin user has username/password `airflow`/`airflow`. You can create additional users:
+
+```powershell
+# Access Airflow container
+docker exec -it docker-webserver-1 bash
+
+# Create a new admin user
+airflow users create \
+  --username your_username \
+  --firstname Your \
+  --lastname Name \
+  --role Admin \
+  --email your.email@example.com
+
+# You'll be prompted to enter a password
+# Exit container
+exit
+```
+
+**Available Roles**:
+- **Admin**: Full access to all features
+- **User**: Can view and trigger DAGs
+- **Viewer**: Read-only access
+- **Op**: Operations (manage connections, variables)
+
+### 10. Trigger Your First Pipeline
+
+You're now ready to execute the ETL pipeline!
+
+**Option A: Using Airflow UI** (Recommended for beginners)
+
+1. Open http://localhost:8080
+2. Find `etl_master_orchestrator` in the DAG list
+3. Click the **toggle switch** on the left to unpause the DAG (should turn blue/green)
+4. Click the **"Play" button** (▶) on the right
+5. Select **"Trigger DAG"**
+6. Optional: Click **"Trigger DAG w/ config"** to add parameters
+7. Click **"Trigger"** to start execution
+
+**What Happens Next**:
+- Master orchestrator starts
+- Triggers 4 dimension DAGs in parallel: customers, products, stores, exchange_rates
+- Waits for products to complete, then triggers sales (fact table)
+- After all data loads, triggers reports DAG (generates 9 reports)
+- Finally triggers data quality checks
+
+**Expected Duration**: 5-8 minutes for complete pipeline execution
+
+**Option B: Using Web Dashboard**
+
+1. Open http://localhost:5000
+2. Select `etl_master_orchestrator` from dropdown
+3. Click **"Trigger DAG"** button
+4. Monitor execution in real-time
+
+**Option C: Using REST API**
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8000/api/v1/dags/etl_master_orchestrator/trigger" `
+  -Method POST `
+  -Headers @{"X-API-Key"="dev-key-12345"}
+```
+
+### 11. Monitor Execution
+
+**In Airflow UI**:
+1. Click on `etl_master_orchestrator` DAG name
+2. Click on the latest run (shown with execution date)
+3. Click **"Graph"** view to see task dependencies
+4. Green = Success, Red = Failed, Yellow = Running, Gray = Not started
+5. Click any task → **"Log"** to see detailed execution logs
+
+**In Web Dashboard**:
+1. Go to http://localhost:5000
+2. Select DAG from dropdown
+3. View real-time status updates
+4. Click **"View Logs"** for any task
+
+**Common Things to Watch**:
+- **Dimension DAGs** (customers, products, stores, exchange_rates) run in parallel - should all complete within 1-2 minutes
+- **Sales DAG** waits for products completion - starts after dimensions finish
+- **Reports DAG** generates 9 CSV reports in `data/reports/`
+- **Data Quality DAG** runs quality checks and creates scorecard
+
+### 12. View Results
+
+After successful execution:
+
+**Check Database Tables**:
+```powershell
+# Using pgAdmin (http://localhost:5050)
+# Navigate to: airflow → Schemas → etl_output → Tables
+
+# Or using psql
+docker exec -it docker-postgres-1 psql -U airflow -d airflow
+\dt etl_output.*
+SELECT COUNT(*) FROM etl_output.customers;  -- Should show ~15,000 rows
+SELECT COUNT(*) FROM etl_output.products;   -- Should show ~2,500 rows
+SELECT COUNT(*) FROM etl_output.sales;      -- Should show ~26,000 rows
+\q
+```
+
+**Check Generated Reports**:
+```powershell
+ls data\reports\
+```
+
+Expected files:
+- `customer_summary.csv` - Customer statistics
+- `customer_segmentation.csv` - RFM analysis
+- `order_status.csv` - Order tracking
+- `sales_trends_daily.csv` - Daily patterns
+- `product_performance.csv` - Top products
+- `store_performance.csv` - Store rankings
+- `anomaly_detection.csv` - Outliers
+- `data_quality_scorecard.csv` - Quality metrics
+- `dag_execution_summary.csv` - Pipeline performance
+
+**Download Reports from Dashboard**:
+1. Go to http://localhost:5000
+2. Click **"Downloads"** tab
+3. Select **"Generated Reports"** category
+4. Click **"Preview"** to view first 50 rows
+5. Click **"Download"** to save locally
+
+**Congratulations! 🎉** You've successfully set up and run your first ETL pipeline!
+
+### 13. Understanding Your Setup
+
+**Docker Architecture**:
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Docker Network                        │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │  Airflow     │  │  Airflow     │  │  PostgreSQL  │  │
+│  │  Webserver   │  │  Scheduler   │  │  Database    │  │
+│  │  :8080       │  │              │  │  :5432       │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│         │                  │                  │          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │  REST API    │  │  pgAdmin     │  │  Grafana     │  │
+│  │  :8000       │  │  :5050       │  │  :3000       │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+└─────────────────────────────────────────────────────────┘
+          │
+   ┌──────────────┐
+   │ Flask Web    │
+   │ Dashboard    │
+   │ :5000        │
+   └──────────────┘
+```
+
+**Data Flow**:
+```
+CSV Files (data/raw/dataset/)
+       ↓
+   Airflow DAGs Extract → Transform → Load
+       ↓
+PostgreSQL (etl_output schema)
+       ↓
+Reports Generated (data/reports/)
+       ↓
+Accessible via: pgAdmin | Web Dashboard | REST API
+```
+
+**File Locations**:
+- **Source Data**: `data/raw/dataset/` (CSV files)
+- **Staging Data**: `data/staging/` (intermediate processing)
+- **Cleaned Data**: `data/processed/` (validated CSVs)
+- **Reports**: `data/reports/` (business analytics)
+- **Logs**: `logs/dag_id=*/` (execution logs)
+- **DAGs**: `dags/` (pipeline definitions)
+- **Scripts**: `scripts/` (ETL logic)
+- **Config**: `config/` (YAML configurations)
+
+### Next Steps
+
+Now that your system is running:
+
+1. **Explore the Airflow UI**: Try pausing/unpausing DAGs, viewing logs, checking task durations
+2. **Query the Database**: Use pgAdmin to run SQL queries on your data
+3. **Review Reports**: Analyze the business reports generated in `data/reports/`
+4. **Try the API**: Use the interactive docs at http://localhost:8000/docs
+5. **Monitor with Grafana**: Set up dashboards at http://localhost:3000 (default login: admin/admin)
+6. **Experiment**: Modify DAG schedules, add new transformations, create custom reports
 
 ## 📁 Project Structure
 
@@ -228,19 +599,55 @@ After running `docker-compose up -d`, access these services:
 | **pgAdmin** | http://localhost:5050 | admin@admin.com / admin | Database visualization |
 | **PostgreSQL** | localhost:5434 | airflow / airflow | Direct database access |
 
-### Connecting to PostgreSQL in pgAdmin
+### Direct PostgreSQL Access (Advanced Users)
 
-1. Open http://localhost:5050
-2. Login with: `admin@admin.com` / `admin`
-3. Right-click "Servers" → "Register" → "Server"
-4. **General Tab**: Name = `Airflow DB`
-5. **Connection Tab**:
-   - Host: `postgres` (Docker network name)
-   - Port: `5432` (internal port)
-   - Database: `airflow`
-   - Username: `airflow`
-   - Password: `airflow`
-6. Click "Save"
+In addition to pgAdmin's graphical interface, you can connect to PostgreSQL directly:
+
+**Method 1: From Outside Docker (Desktop Tools)**
+
+Use any PostgreSQL client (DBeaver, DataGrip, psql) with these settings:
+- **Host**: `localhost` (external access)
+- **Port**: `5434` (exposed Docker port)
+- **Database**: `airflow`
+- **Username**: `airflow`
+- **Password**: `airflow`
+
+**Example with psql CLI**:
+```powershell
+# If you have PostgreSQL installed locally
+psql -h localhost -p 5434 -U airflow -d airflow
+
+# List tables in etl_output schema
+\dt etl_output.*
+
+# Query data
+SELECT COUNT(*) FROM etl_output.customers;
+```
+
+**Method 2: From Inside Docker Container**
+
+```powershell
+# Access PostgreSQL container directly
+docker exec -it docker-postgres-1 psql -U airflow -d airflow
+
+# You're now in psql prompt
+airflow=# \l                    -- List databases
+airflow=# \dn                   -- List schemas
+airflow=# \dt etl_output.*      -- List tables in etl_output schema
+airflow=# \d etl_output.sales   -- Describe sales table structure
+airflow=# \q                    -- Exit psql
+```
+
+**Connection String for Applications**:
+```
+postgresql://airflow:airflow@localhost:5434/airflow
+```
+
+**Security Note**: These are development credentials. For production:
+1. Change default passwords in `Docker/.env`
+2. Use secrets management (Docker secrets, Vault)
+3. Restrict network access with firewall rules
+4. Enable SSL/TLS connections
 
 ## 🎯 Running DAGs
 
@@ -422,90 +829,194 @@ python test_api.py
 
 ## 🐛 Troubleshooting
 
-### Services Not Starting
+### First-Time Setup Issues
 
-**Problem**: Docker containers show as unhealthy
+#### Issue: Docker Desktop Not Running
 
+**Symptom**: `error during connect: This error may indicate that the docker daemon is not running`
+
+**Solution**:
 ```powershell
-# Check detailed logs
-docker-compose logs
+# Start Docker Desktop from Start Menu
+# Or run command (if installed as service)
+Start-Service docker
 
-# Check specific service
-docker-compose logs airflow-webserver
-
-# Common fix: restart services
-docker-compose down
-docker-compose up -d
+# Verify Docker is running
+docker version
 ```
 
-### Port Already in Use
+#### Issue: Docker Images Taking Too Long to Download
 
-**Problem**: Error "port is already allocated"
+**Symptom**: First `docker-compose up -d` stuck on "Pulling..."
 
+**Context**: First-time setup downloads ~2GB of images (PostgreSQL, Airflow, Redis, Grafana, etc.)
+
+**Solution**:
+- **Be patient**: Initial download can take 5-15 minutes depending on internet speed
+- **Check progress**: Open Docker Desktop → Images to see download progress
+- **Resume interrupted download**: Just run `docker-compose up -d` again
+- **Use faster mirror**: Edit docker daemon settings to use a closer registry mirror
+
+#### Issue: Port Conflicts on Startup
+
+**Symptom**: `Bind for 0.0.0.0:8080 failed: port is already allocated`
+
+**Solution**:
 ```powershell
-# Check what's using the port
+# Identify what's using the port
 netstat -ano | findstr :8080
-netstat -ano | findstr :5434
 
-# Kill the process (replace PID)
+# Kill the process (replace <PID> with actual process ID)
 taskkill /PID <PID> /F
 
-# Or change port in Docker/.env
-POSTGRES_PORT=5435  # Change to different port
+# Or change port in Docker/.env file
+AIRFLOW_PORT=8081  # Change to any available port
 ```
 
-### Database Connection Failed
+**Common Port Conflicts**:
+- **8080**: Airflow Webserver (alternative: 8081, 8082)
+- **5434**: PostgreSQL (alternative: 5435, 5436)
+- **8000**: REST API (alternative: 8001, 8888)
+- **5000**: Flask Dashboard (alternative: 5001, 3001)
+- **5050**: pgAdmin (alternative: 5051, 8888)
 
-**Problem**: "Could not connect to PostgreSQL"
+#### Issue: Insufficient Memory for Docker
 
-1. Wait 2-3 minutes for full initialization
-2. Check PostgreSQL health:
-   ```powershell
-   docker-compose ps postgres
-   ```
-3. Verify .env file has correct credentials
-4. Restart postgres service:
-   ```powershell
-   docker-compose restart postgres
-   ```
+**Symptom**: Containers crash with `OOMKilled` or fail to start
 
-### DAG Not Appearing in UI
+**Solution**:
+```powershell
+# Increase Docker memory allocation
+# Docker Desktop → Settings → Resources → Memory
+# Set to at least 4GB (recommended: 6-8GB)
+```
 
-**Problem**: New DAG not visible
+#### Issue: Airflow Init Container Fails
 
-1. Check DAG for syntax errors:
-   ```powershell
-   docker exec -it airflow-webserver python /opt/airflow/dags/your_dag.py
-   ```
-2. Check scheduler logs:
-   ```powershell
-   docker-compose logs airflow-scheduler
-   ```
-3. Refresh DAG list (wait 30 seconds or restart scheduler)
+**Symptom**: `docker-airflow-init-1 exited with code 1`
 
-### Task Failing with Import Errors
+**Solution**:
+```powershell
+# Check init logs
+docker-compose logs airflow-init
 
-**Problem**: "ModuleNotFoundError"
+# Common causes:
+# 1. Database not ready - wait 30 seconds and restart
+docker-compose restart airflow-init
 
-1. Ensure module exists in `scripts/` or `scripts/utils/`
-2. Check PYTHONPATH is set correctly in docker-compose.yaml
-3. Rebuild Docker image:
-   ```powershell
-   docker-compose build airflow-webserver
-   docker-compose up -d
-   ```
+# 2. Permissions issue - reset volumes
+docker-compose down -v
+docker-compose up -d
 
-### Out of Memory Errors
+# 3. Configuration error - check Docker/.env file
+```
 
-**Problem**: Container crashes with OOM
+#### Issue: No DAGs Appearing in UI
 
-1. Increase Docker memory allocation:
-   - Docker Desktop → Settings → Resources → Memory
-   - Allocate at least 4GB
-2. Reduce concurrent task execution in dag_base.py:
-   ```python
-   'max_active_runs': 1  # Reduce from 3
-   ```
+**Symptom**: Airflow UI is empty, no DAGs listed
+
+**Solution**:
+```powershell
+# Wait 2-3 minutes for DAG parsing
+# Check scheduler logs
+docker-compose logs airflow-scheduler | Select-String -Pattern "ERROR"
+
+# Verify DAG files are mounted
+docker exec -it docker-webserver-1 ls /opt/airflow/dags
+
+# Check for Python syntax errors
+docker exec -it docker-webserver-1 python /opt/airflow/dags/etl_master_orchestrator.py
+
+# Force DAG refresh
+docker-compose restart airflow-scheduler
+```
+
+#### Issue: pgAdmin Can't Connect to PostgreSQL
+
+**Symptom**: "Unable to connect to server"
+
+**Common Mistakes & Solutions**:
+
+❌ **Mistake 1**: Using `localhost` as hostname
+✅ **Solution**: Use `postgres` (Docker service name)
+
+❌ **Mistake 2**: Using port `5434`
+✅ **Solution**: Use port `5432` (internal Docker port)
+
+❌ **Mistake 3**: PostgreSQL not ready
+✅ **Solution**: Wait 2-3 minutes after `docker-compose up`, check health:
+```powershell
+docker-compose ps postgres
+# Should show: Up (healthy)
+```
+
+❌ **Mistake 4**: Wrong credentials
+✅ **Solution**: Username=`airflow`, Password=`airflow`, Database=`airflow`
+
+#### Issue: Web Dashboard Returns Connection Errors
+
+**Symptom**: Dashboard shows "Failed to connect to API" or "Connection refused"
+
+**Solution**:
+```powershell
+# 1. Verify REST API is running
+docker-compose ps api
+# Should show: Up
+
+# 2. Test API health
+Invoke-RestMethod -Uri "http://localhost:8000/health"
+# Should return: {"status":"healthy"}
+
+# 3. Check API logs for errors
+docker-compose logs api
+
+# 4. Restart API service
+docker-compose restart api
+
+# 5. Verify Python dependencies installed
+pip list | Select-String -Pattern "flask|requests|pandas"
+```
+
+#### Issue: Python Module Import Errors in DAGs
+
+**Symptom**: Tasks fail with `ModuleNotFoundError: No module named 'scripts'`
+
+**Solution**:
+```powershell
+# Verify PYTHONPATH in docker-compose.yaml
+# Should include: PYTHONPATH=/opt/airflow
+
+# Restart scheduler to reload environment
+docker-compose restart airflow-scheduler
+
+# Check if scripts are mounted correctly
+docker exec -it docker-webserver-1 ls /opt/airflow/scripts
+```
+
+### Runtime Issues### Runtime Issues
+
+#### Issue: DAG Takes Too Long (50+ Minutes)
+
+**Symptom**: Master orchestrator or child DAGs running very slowly
+
+**Solutions Applied** (Already Optimized in v2.0):
+- ✅ Sensor poke interval reduced: 30s → 5s
+- ✅ Sensor timeout reduced: 3600s → 1200s
+- ✅ Sensor mode changed to 'reschedule'
+- ✅ Parallelism increased: 32 concurrent tasks
+- ✅ Expected duration: **5-8 minutes**
+
+**If Still Slow**:
+```powershell
+# Check active task count
+docker exec -it docker-webserver-1 airflow tasks states-for-dag-run etl_master_orchestrator <run_id>
+
+# Review task durations in Airflow UI
+# Go to: DAG → Run → Task Duration chart
+
+# Check for blocked sensors
+docker-compose logs airflow-scheduler | Select-String -Pattern "sensor"
+```
 
 ### API Returns 404 or 500 Errors
 
@@ -701,5 +1212,263 @@ airflow / airflow
 
 ---
 
-**Last Updated**: January 19, 2026  
+## 📝 First-Time Setup Checklist
+
+Use this checklist to ensure your environment is properly configured:
+
+### Pre-Installation (Before Running Docker)
+
+- [ ] **Docker Desktop installed** (version 20.10+)
+  - Run: `docker --version`
+- [ ] **Docker Compose installed** (version 2.0+)
+  - Run: `docker-compose --version`
+- [ ] **Docker Desktop is running**
+  - Check: Docker icon in system tray should be green
+- [ ] **Docker has sufficient resources**
+  - Docker Desktop → Settings → Resources
+  - Memory: Minimum 4GB (Recommended: 6-8GB)
+  - Disk: At least 10GB free space
+- [ ] **Repository cloned**
+  - `git clone https://github.com/SammyBoy-09/Airflow_ETL.git`
+- [ ] **CSV data files present**
+  - Check: `ls data\raw\dataset` shows 5 CSV files
+- [ ] **Port availability checked**
+  - Ports free: 8080, 5434, 8000, 5000, 5050, 3000, 9090
+
+### Initial Docker Setup
+
+- [ ] **Navigated to Docker directory**
+  - `cd Docker`
+- [ ] **Started services**
+  - `docker-compose up -d`
+- [ ] **Waited for initialization**
+  - Wait 3-5 minutes for first-time setup
+- [ ] **Verified all services running**
+  - `docker-compose ps` - All services show `Up` and `(healthy)`
+- [ ] **Checked logs for errors**
+  - `docker-compose logs | Select-String -Pattern "ERROR"`
+
+### Airflow Configuration
+
+- [ ] **Accessed Airflow UI**
+  - Open: http://localhost:8080
+- [ ] **Logged in successfully**
+  - Username: `airflow`, Password: `airflow`
+- [ ] **Verified DAGs visible**
+  - Should see 8+ DAGs in list
+- [ ] **All DAGs parsed without errors**
+  - No red "Import Error" messages
+
+### Database Setup (pgAdmin)
+
+- [ ] **Accessed pgAdmin**
+  - Open: http://localhost:5050
+- [ ] **Logged into pgAdmin**
+  - Email: `admin@admin.com`, Password: `admin`
+- [ ] **Registered PostgreSQL server**
+  - Host: `postgres`, Port: `5432`, Database: `airflow`
+  - Username: `airflow`, Password: `airflow`
+- [ ] **Connection successful**
+  - Can see: Servers → Airflow ETL Database → Databases → airflow
+- [ ] **Verified schemas present**
+  - `public` schema (Airflow metadata)
+  - `etl_output` schema (for ETL data - empty until first run)
+
+### API & Dashboard Setup
+
+- [ ] **Verified REST API running**
+  - Test: `Invoke-RestMethod -Uri "http://localhost:8000/health"`
+  - Should return: `{"status":"healthy"}`
+- [ ] **Python environment created** (for dashboard)
+  - `conda create -n airflow_env python=3.11` OR `python -m venv airflow_env`
+- [ ] **Python environment activated**
+  - `conda activate airflow_env` OR `.\airflow_env\Scripts\Activate.ps1`
+- [ ] **Dependencies installed**
+  - `pip install -r requirements.txt`
+- [ ] **Web dashboard started**
+  - `python scripts/api/web_dashboard.py`
+- [ ] **Dashboard accessible**
+  - Open: http://localhost:5000
+
+### First Pipeline Run
+
+- [ ] **Unpaused master orchestrator**
+  - Airflow UI → `etl_master_orchestrator` → Toggle to ON
+- [ ] **Triggered master DAG**
+  - Click Play button → Trigger DAG
+- [ ] **Monitored execution**
+  - Watch Graph view or use Web Dashboard
+- [ ] **Verified successful completion**
+  - All tasks green in Graph view
+  - Expected duration: 5-8 minutes
+- [ ] **Checked database tables**
+  - pgAdmin: etl_output schema should have 5 tables with data
+- [ ] **Verified reports generated**
+  - Check: `ls data\reports` shows 9 CSV reports
+- [ ] **Downloaded sample report**
+  - Web Dashboard → Downloads → Preview/Download reports
+
+### Optional: Monitoring Stack
+
+- [ ] **Accessed Grafana**
+  - Open: http://localhost:3000
+  - Default login: `admin` / `admin`
+- [ ] **Accessed Prometheus**
+  - Open: http://localhost:9090
+- [ ] **Set up custom dashboards** (optional)
+
+### Validation
+
+- [ ] **Customer data loaded**
+  - Query: `SELECT COUNT(*) FROM etl_output.customers;`
+  - Expected: ~15,000 rows
+- [ ] **Product data loaded**
+  - Query: `SELECT COUNT(*) FROM etl_output.products;`
+  - Expected: ~2,500 rows
+- [ ] **Sales data loaded**
+  - Query: `SELECT COUNT(*) FROM etl_output.sales;`
+  - Expected: ~26,000 rows
+- [ ] **Reports accessible**
+  - All 9 reports in `data/reports/` directory
+- [ ] **API endpoints working**
+  - Test: http://localhost:8000/docs (interactive API docs)
+
+### Troubleshooting Reference
+
+If you encounter issues, refer to:
+- [ ] **Troubleshooting section** (above)
+- [ ] **Docker logs**: `docker-compose logs <service-name>`
+- [ ] **Airflow task logs**: Airflow UI → DAG → Task → Logs
+- [ ] **Service health**: `docker-compose ps`
+
+---
+
+## 🎓 Understanding the System
+
+### Key Concepts for First-Time Users
+
+**What is Airflow?**
+- Apache Airflow is a workflow orchestration tool
+- **DAG** (Directed Acyclic Graph) = A workflow with tasks and dependencies
+- **Task** = A single unit of work (e.g., extract data, transform data)
+- **Operator** = A template for creating tasks (PythonOperator, BashOperator)
+- **Scheduler** = Runs DAGs based on schedule or trigger
+- **Webserver** = Provides the UI for monitoring
+
+**What is the ETL Process?**
+- **Extract**: Read data from CSV files
+- **Transform**: Clean, validate, and reshape data
+- **Load**: Insert data into PostgreSQL database
+
+**How Does This Project Work?**
+1. **Master Orchestrator** triggers individual DAG workflows
+2. **Dimension DAGs** (customers, products, stores, exchange_rates) load reference data in parallel
+3. **Fact DAG** (sales) loads transaction data after products complete
+4. **Reports DAG** generates analytical reports after all data is loaded
+5. **Quality DAG** runs validation checks and creates scorecards
+
+**What Technologies Are Used?**
+- **Docker**: Containerization for consistent environments
+- **PostgreSQL**: Relational database for storing data
+- **Airflow**: Workflow orchestration and scheduling
+- **Flask**: Web dashboard framework
+- **FastAPI**: REST API framework
+- **Grafana/Prometheus**: Monitoring and metrics
+- **Pandas**: Data processing in Python
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     USER INTERFACES                          │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │  Airflow UI  │  │ Web Dashboard│  │   pgAdmin    │      │
+│  │  :8080       │  │  :5000       │  │   :5050      │      │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+└─────────┼──────────────────┼──────────────────┼─────────────┘
+          │                  │                  │
+          ▼                  ▼                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   DOCKER CONTAINER LAYER                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │  Webserver   │  │  Scheduler   │  │  REST API    │      │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│         │                  │                  │              │
+│         └──────────┬───────┴──────────────────┘              │
+│                    │                                          │
+│         ┌──────────▼──────────┐  ┌──────────────┐           │
+│         │   PostgreSQL        │  │    Redis     │           │
+│         │   (Metadata + ETL)  │  │   (Queue)    │           │
+│         └─────────────────────┘  └──────────────┘           │
+└─────────────────────────────────────────────────────────────┘
+          │
+          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     DATA STORAGE LAYER                       │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │  CSV Files   │  │  Processed   │  │   Reports    │      │
+│  │  (data/raw)  │  │  (data/proc) │  │  (data/rep)  │      │
+│  └──────────────┘  └──────────────┘  └──────────────┘      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow Diagram
+
+```
+┌─────────────┐
+│  CSV Files  │ Customers.csv, Products.csv, Stores.csv,
+└──────┬──────┘ Sales.csv, Exchange_Rates.csv
+       │
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│              AIRFLOW ETL PIPELINE                        │
+│                                                          │
+│  Stage 1: Ingestion (Parallel)                          │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────────┐  │
+│  │Customer │ │Product  │ │ Store   │ │Exchange Rate │  │
+│  │  ETL    │ │  ETL    │ │  ETL    │ │     ETL      │  │
+│  └────┬────┘ └────┬────┘ └────┬────┘ └──────┬───────┘  │
+│       │           │            │             │          │
+│       └───────────┴────────────┴─────────────┘          │
+│                   │                                      │
+│  Stage 2: Facts (Sequential)                            │
+│       ┌───────────▼───────────┐                         │
+│       │     Sales ETL         │ (Waits for Products)    │
+│       └───────────┬───────────┘                         │
+│                   │                                      │
+│  Stage 3: Analytics                                     │
+│       ┌───────────▼───────────┐                         │
+│       │   Report Generation   │ (9 Business Reports)    │
+│       └───────────┬───────────┘                         │
+│                   │                                      │
+│  Stage 4: Quality                                       │
+│       ┌───────────▼───────────┐                         │
+│       │  Data Quality Checks  │                         │
+│       └───────────────────────┘                         │
+└─────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│           PostgreSQL Database (etl_output schema)        │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │Customers │ │ Products │ │  Stores  │ │  Sales   │  │
+│  │15K rows  │ │ 2.5K rows│ │ 67 rows  │ │26K rows  │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
+└─────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────┐
+│               Generated Reports (CSV)                    │
+│  • Customer Summary        • Sales Trends Daily          │
+│  • Customer Segmentation   • Product Performance         │
+│  • Order Status            • Store Performance           │
+│  • Anomaly Detection       • Data Quality Scorecard      │
+│  • DAG Execution Summary                                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+**Last Updated**: January 28, 2026  
+**Version**: 2.0 (Performance Optimized)
 
