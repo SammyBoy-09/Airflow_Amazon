@@ -36,10 +36,32 @@ def extract_from_sql(**context):
     
     # Import here to avoid DAG import timeout
     from scripts.Extract import DataExtractor
+    from sqlalchemy import create_engine, inspect
+    
     extractor = DataExtractor()
     
     # Connection string for local PostgreSQL (same as Airflow DB)
     connection_string = "postgresql+psycopg2://airflow:airflow@postgres:5432/airflow"
+    
+    # FIRST-TIME SETUP CHECK: Verify table exists before extraction
+    engine = create_engine(connection_string)
+    inspector = inspect(engine)
+    
+    if not inspector.has_table('customers', schema='etl_output'):
+        logger.warning("⚠️ Table 'etl_output.customers' does not exist yet.")
+        logger.warning("📝 This is normal on first-time setup. Please run 'etl_master_orchestrator' first to create the tables.")
+        logger.warning("ℹ️ The SQL ingestion DAG extracts data FROM existing tables, so tables must be created first.")
+        
+        # Return success with zero records instead of failing
+        return {
+            'table_name': 'sql_extract_customers',
+            'source': 'etl_output.customers',
+            'rows_extracted': 0,
+            'columns': 0,
+            'staging_file': 'N/A',
+            'status': 'skipped',
+            'message': 'Table does not exist yet - run main ETL pipeline first'
+        }
     
     # Example: Extract data from etl_output.customers table
     df, stats = extractor.extract_from_sql(
@@ -73,8 +95,31 @@ def execute_sql_transformation(**context):
     
     # Import SQL transformation engine
     from scripts.sql_transformations.engine import SQLTransformationEngine
+    from sqlalchemy import create_engine, inspect
     
     connection_string = "postgresql+psycopg2://airflow:airflow@postgres:5432/airflow"
+    
+    # FIRST-TIME SETUP CHECK: Verify sales table exists before transformation
+    temp_engine = create_engine(connection_string)
+    inspector = inspect(temp_engine)
+    
+    if not inspector.has_table('sales', schema='etl_output'):
+        logger.warning("⚠️ Table 'etl_output.sales' does not exist yet.")
+        logger.warning("📝 This is normal on first-time setup. Please run 'etl_master_orchestrator' first to create the tables.")
+        logger.warning("ℹ️ The SQL transformation requires existing sales data to aggregate.")
+        temp_engine.dispose()
+        
+        # Return success with zero records instead of failing
+        return {
+            'transformation': 'sales_by_store_aggregate',
+            'rows_generated': 0,
+            'staging_file': 'N/A',
+            'status': 'skipped',
+            'message': 'Sales table does not exist yet - run main ETL pipeline first'
+        }
+    
+    temp_engine.dispose()
+    
     engine = SQLTransformationEngine(connection_string)
     
     # Example: Aggregate sales by store using direct SQL query
@@ -120,7 +165,16 @@ def load_to_database(**context):
     
     if not transform_info:
         logger.warning("⚠️ No transformation data found, skipping load")
-        return {'status': 'skipped'}
+        return {'status': 'skipped', 'message': 'No data from previous task'}
+    
+    # Check if previous task was skipped (first-time setup scenario)
+    if transform_info.get('status') == 'skipped':
+        logger.warning("⚠️ Previous transformation was skipped (tables don't exist yet)")
+        logger.warning("📝 This is normal on first-time setup. Please run 'etl_master_orchestrator' first.")
+        return {
+            'status': 'skipped',
+            'message': transform_info.get('message', 'Previous task was skipped')
+        }
     
     # Load data
     from sqlalchemy import create_engine

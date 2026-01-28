@@ -221,20 +221,30 @@ def generate_all_reports(**context):
     
     # ===== REPORT 10: Rejected Records Summary =====
     try:
-        rejected_records = pd.read_sql("SELECT * FROM etl_output.rejected_records", engine)
-        if len(rejected_records) > 0:
-            # Summary by table and reason
-            report10_summary = rejected_records.groupby(['table_name', 'reason']).size().reset_index(name='count')
-            report10_summary = report10_summary.sort_values('count', ascending=False)
-            report10_summary.to_csv(f'{reports_dir}/rejected_records_summary.csv', index=False)
-            reports_generated.append('rejected_records_summary.csv')
-            
-            # Full rejected records (without original_data to keep file size manageable)
-            report10_detail = rejected_records[['table_name', 'record_id', 'reason', 'rejected_at', 'dag_run_id']]
-            report10_detail = report10_detail.sort_values('rejected_at', ascending=False)
-            report10_detail.to_csv(f'{reports_dir}/rejected_records_detail.csv', index=False)
-            reports_generated.append('rejected_records_detail.csv')
-            print(f"✅ Report 10: Rejected Records ({len(rejected_records):,} records)")
+        # OPTIMIZATION: Generate summary directly in SQL (much faster than pandas)
+        report10_summary = pd.read_sql("""
+            SELECT table_name, reason, COUNT(*) as count
+            FROM etl_output.rejected_records
+            GROUP BY table_name, reason
+            ORDER BY count DESC
+        """, engine)
+        report10_summary.to_csv(f'{reports_dir}/rejected_records_summary.csv', index=False)
+        reports_generated.append('rejected_records_summary.csv')
+        
+        # OPTIMIZATION: Only get recent rejected records (last 1000) instead of all
+        # This prevents loading 1.4M+ records which causes 1-3 minute delay
+        report10_detail = pd.read_sql("""
+            SELECT table_name, record_id, reason, rejected_at, dag_run_id
+            FROM etl_output.rejected_records
+            ORDER BY rejected_at DESC
+            LIMIT 1000
+        """, engine)
+        report10_detail.to_csv(f'{reports_dir}/rejected_records_detail.csv', index=False)
+        reports_generated.append('rejected_records_detail.csv')
+        
+        # Get total count for logging
+        total_count = pd.read_sql("SELECT COUNT(*) as count FROM etl_output.rejected_records", engine)['count'][0]
+        print(f"✅ Report 10: Rejected Records Summary (total: {total_count:,}, detailed: {len(report10_detail):,})")
     except Exception as e:
         print(f"⚠️ Report 10: Rejected Records skipped - {e}")
     

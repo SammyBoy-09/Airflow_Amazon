@@ -170,8 +170,25 @@ Open your browser and navigate to:
 
 **First Login**: The Airflow UI will show a list of DAGs. Initially, all DAGs will be paused (gray toggle). This is normal!
 
-**Expected DAGs**:
-- `etl_master_orchestrator` - Master pipeline coordinator
+**⚠️ If Login Fails (User Not Found)**:
+If the Airflow UI doesn't accept the credentials, the admin user may not have been created during initialization. Run this command to create it:
+
+```powershell
+cd Docker
+docker compose run --rm webserver airflow users create --username airflow --firstname Airflow --lastname Admin --role Admin --email admin@airflow.com --password airflow
+```
+
+Or to create a custom admin user:
+```powershell
+docker compose run --rm webserver airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin
+```
+
+After running this, you should be able to login with the credentials you specified.
+
+**Expected DAGs (12 total)**:
+
+**Core ETL Pipeline (REQUIRED - Run These First):**
+- `etl_master_orchestrator` - Master pipeline coordinator (start here!)
 - `etl_customers` - Customer data pipeline
 - `etl_products` - Product data pipeline
 - `etl_stores` - Store data pipeline
@@ -179,6 +196,17 @@ Open your browser and navigate to:
 - `etl_sales` - Sales transaction pipeline
 - `etl_reports` - Report generation pipeline
 - `etl_data_quality` - Data quality checks
+
+**Advanced Features (OPTIONAL - Skip on First Run):**
+- `etl_file_watcher` - Monitors for new files (runs automatically every 5 min)
+- `etl_sql_ingestion` - Extract from existing DB tables (requires main pipeline to run first)
+- `etl_api_ingestion` - Extract from REST APIs (demo feature)
+- `etl_json_ingestion` - Extract from JSON files (demo feature)
+
+**⚠️ Important for First-Time Users:**
+- Only trigger `etl_master_orchestrator` on first run
+- The advanced ingestion DAGs (SQL/API/JSON) will fail if main pipeline hasn't run yet
+- File watcher runs automatically - no manual trigger needed
 
 ### 6. Set Up PostgreSQL Admin Access (pgAdmin)
 
